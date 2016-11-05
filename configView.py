@@ -16,14 +16,18 @@ except AttributeError:
 
 try:
     _encoding = QtGui.QApplication.UnicodeUTF8
+
+
     def _translate(context, text, disambig):
         return QtGui.QApplication.translate(context, text, disambig, _encoding)
 except AttributeError:
     def _translate(context, text, disambig):
         return QtGui.QApplication.translate(context, text, disambig)
 
-class Ui_Form(object):
+
+class Ui_Form(QtGui.QWidget):
     def setupUi(self, Form):
+        self.form = Form
         Form.setObjectName(_fromUtf8("Form"))
         Form.resize(742, 832)
         sizePolicy = QtGui.QSizePolicy(QtGui.QSizePolicy.Maximum, QtGui.QSizePolicy.Maximum)
@@ -52,11 +56,10 @@ class Ui_Form(object):
 
         self.retranslateUi(Form)
         QtCore.QMetaObject.connectSlotsByName(Form)
+        self.buttonBox.clicked.connect(self.close_window)
 
     def retranslateUi(self, Form):
         Form.setWindowTitle(_translate("Form", "Jenkins job config viewer", None))
 
-
     def close_window(self):
         self.form.close()
-

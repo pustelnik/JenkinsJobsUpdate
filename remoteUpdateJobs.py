@@ -1,6 +1,8 @@
-from paramiko.client import *
-from paramiko.sftp_client import *
+import posixpath
 import re
+
+from paramiko.client import *
+
 import localUpdateJobs
 
 
@@ -54,7 +56,7 @@ class RemoteJenkinsParameters(localUpdateJobs.JenkinsParameters):
         self.sftp_client = self.ssh.sftp()
         self.root_dir = root_dir
 
-    def modify_params(self, config_paths, param_list, mvn_property):
+    def add_params(self, config_paths, param_list, mvn_property):
         """Make a local copy of all remote configs. Adds/modifies parameters and mvn
         properties on local copy. Finally remote configs are overwritten by local
          files.
@@ -64,31 +66,42 @@ class RemoteJenkinsParameters(localUpdateJobs.JenkinsParameters):
          :param param_list: List of Parameters to add to each job config
          :param mvn_property: List of mvn_property tuples (key, value) example ('-dsome.dd, 'value')
          """
-        local_config_paths = self._copy_configs_to_local(config_paths.values())
+        local_config_paths = self.copy_configs(config_paths.values(), deep_copy=False)
+        selected_local_config_paths = self.filter_selected_local_config_paths(config_paths, local_config_paths)
+        super().add_params(selected_local_config_paths, param_list, mvn_property)
+        self.override_remote_config(config_paths, local_config_paths)
+
+    @staticmethod
+    def filter_selected_local_config_paths(config_paths, local_config_paths):
+        """Returns local config paths dictionary {jobName: config_path} using
+        keys (jobNames(folder names)) to create new Dictionary
+
+        :param config_paths: Dictionary with remote paths to config files
+        :param local_config_paths: Dictionary with local copy of config paths"""
         selected_local_config_paths = {}
         for directory_name in config_paths.keys():
             selected_local_config_paths[directory_name] = local_config_paths[directory_name]
+        return selected_local_config_paths
 
-        super().modify_params(selected_local_config_paths, param_list, mvn_property)
+    def override_remote_config(self, config_paths, local_config_paths):
+        """Overrides all remote configs at given paths with configuration files
+        stored locally (copied to local using copy_configs method)
 
+        :param config_paths: Dictionary {jobName: config_path} pointing to remote config.xml file locations
+        :param local_config_paths: Dictionary {jobName: config_path} pointing to local config.xml file locations
+        """
         for key in local_config_paths.keys():
             self.sftp_client.open(config_paths[key], 'w').write(open(local_config_paths[key]).read())
 
-    def _copy_configs_to_local(self, config_paths):
-        copy_paths = {}
+    def import_job_parameters(self, new_parameters, config_paths, with_mvn_params=False, src_config_path=''):
+        local_config_paths = self.copy_configs(config_paths.values(), deep_copy=False)
+        selected_local_config_paths = self.filter_selected_local_config_paths(config_paths, local_config_paths)
+        super().import_job_parameters(new_parameters, selected_local_config_paths.values(), with_mvn_params)
+        self.override_remote_config(config_paths, local_config_paths)
 
-        for config_path in config_paths:
-            config = self.read_config_file(config_path)
-            config_copy_dir_path = './jobs_copy/' + os.path.split(os.path.split(config_path)[0])[1]
-            if not os.path.exists('./jobs_copy'):
-                os.mkdir('./jobs_copy')
-            if not os.path.exists(config_copy_dir_path):
-                os.mkdir(config_copy_dir_path)
-            config_copy_file_path = os.path.join(config_copy_dir_path, 'config.xml')
-            config_copy = open(config_copy_file_path, 'w')
-            config_copy.write(config)
-            copy_paths[os.path.split(os.path.split(config_path)[0])[1]] = config_copy_file_path
-        return copy_paths
+    def read_job_all_parameters(self, config_path):
+        local_config_path_copy = self.copy_configs([config_path], deep_copy=False)
+        return super().read_job_all_parameters(list(local_config_path_copy.values())[0])
 
     def read_all_configs(self, root_dir):
         """Returns parameters dictionary where key is job name
@@ -99,30 +112,42 @@ class RemoteJenkinsParameters(localUpdateJobs.JenkinsParameters):
         """
         config_paths = {}
 
-        def push_config(path): config_paths[os.path.split(path)[1]] = os.path.join(path, 'config.xml')
+        def push_config(path): config_paths[posixpath.split(path)[1]] = posixpath.join(path, 'config.xml')
 
         [push_config(path) for path in self._read_all_paths(root_dir)]
         return config_paths
 
-    def _read_all_paths(self, root_dir):
+    def _read_all_paths(self, root_dir, is_folder=False):
         result = []
 
         self.sftp_client.listdir(root_dir)
 
-        def is_dir(path, what):
+        def is_dir(path):
+            has_jobs_folder = False
+            has_folder_config = False
             for subdir in self.sftp_client.listdir(path):
-                if subdir == what:
-                    return True
-            return False
+                if not has_jobs_folder and subdir == 'jobs':
+                    has_jobs_folder = True
+                if not has_folder_config and subdir == 'config.xml':
+                    has_folder_config = True
+            folder = has_folder_config and has_jobs_folder
+            if folder:
+                print("{} is folder".format(path))  # TODO mark path as directory in search result list
+            return folder
 
         for child in self.sftp_client.listdir(root_dir):
-            if child == "jobs" or is_dir(os.path.join(root_dir, child), 'jobs'):
-                result.extend(self._read_all_paths(os.path.join(root_dir, child)))
+            if is_folder and child == 'config.xml':
+                continue
+            elif is_folder and child == 'jobs':
+                return result.extend(self._read_all_paths(posixpath.join(root_dir, child), False))
+            is_current_path_folder = is_dir(posixpath.join(root_dir, child))
+            if child == "jobs" or is_folder:
+                result.extend(self._read_all_paths(posixpath.join(root_dir, child), is_current_path_folder))
             elif child == 'builds' or child.endswith('Build') or child.startswith(".") \
                     or re.match('^\s\\\\..*$', child):
                 continue
-            elif is_dir(os.path.join(root_dir, child), 'config.xml'):
-                result.append(os.path.join(root_dir, child))
+            else:
+                result.append(posixpath.join(root_dir, child))
         return result
 
     def read_config_file(self, path):
