@@ -811,6 +811,12 @@ class JobSearchThread(QThread):
         except paramiko.ssh_exception.NoValidConnectionsError as err:
             logging.debug(err)
             self.emit(SIGNAL('show_error_message(PyQt_PyObject)'), err.strerror)
+        except paramiko.ssh_exception.AuthenticationException as err:
+            logging.debug(err)
+            self.emit(SIGNAL('show_error_message(PyQt_PyObject)'), str(err))
+        except Exception as err:
+            logging.debug(err)
+            self.emit(SIGNAL('show_error_message(PyQt_PyObject)'), str(err))
 
     def run(self):
         self.fill_search_result()
