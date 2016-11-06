@@ -711,7 +711,7 @@ class JenkinsUpdateJobsGui(QTabWidget, Ui_TabWidget):
         for row in range(target_model.rowCount()):
             item = target_model.item(row)
             if item.checkState() == QtCore.Qt.Checked:
-                self.jenkins_params.import_job_parameters(src_parameters, get_target_jobs_config_paths().values(),
+                self.jenkins_params.import_job_parameters(src_parameters, get_target_jobs_config_paths(),
                                                           with_mvn_params=copy_mvn_parameter,
                                                           src_config_path=get_src_job_config_path())
         self.show_info_message("Parameters copied successfully")

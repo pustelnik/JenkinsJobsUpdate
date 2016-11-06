@@ -1,5 +1,6 @@
 import posixpath
 import re
+import logging
 
 from paramiko.client import *
 
@@ -117,14 +118,16 @@ class RemoteJenkinsParameters(localUpdateJobs.JenkinsParameters):
         [push_config(path) for path in self._read_all_paths(root_dir)]
         return config_paths
 
-    def _read_all_paths(self, root_dir, is_folder=False):
+    def _read_all_paths(self, root_dir):
         result = []
-
         self.sftp_client.listdir(root_dir)
 
-        def is_dir(path):
+        def is_jenkins_folder(path):
             has_jobs_folder = False
             has_folder_config = False
+            if path.endswith('xml'):
+                logging.debug("wrong check at {}".format(path))
+                return False
             for subdir in self.sftp_client.listdir(path):
                 if not has_jobs_folder and subdir == 'jobs':
                     has_jobs_folder = True
@@ -132,19 +135,25 @@ class RemoteJenkinsParameters(localUpdateJobs.JenkinsParameters):
                     has_folder_config = True
             folder = has_folder_config and has_jobs_folder
             if folder:
-                print("{} is folder".format(path))  # TODO mark path as directory in search result list
+                logging.debug("{}    is folder".format(path))  # TODO mark path as directory in search result list
             return folder
 
         for child in self.sftp_client.listdir(root_dir):
-            if is_folder and child == 'config.xml':
+            if is_jenkins_folder(root_dir) and child == 'config.xml':
                 continue
-            elif is_folder and child == 'jobs':
-                return result.extend(self._read_all_paths(posixpath.join(root_dir, child), False))
-            is_current_path_folder = is_dir(posixpath.join(root_dir, child))
-            if child == "jobs" or is_folder:
-                result.extend(self._read_all_paths(posixpath.join(root_dir, child), is_current_path_folder))
-            elif child == 'builds' or child.endswith('Build') or child.startswith(".") \
-                    or re.match('^\s\\\\..*$', child):
+            if child == "jobs":
+                result.extend(self._read_all_paths(posixpath.join(root_dir, child)))
+                continue
+            elif child == 'builds' \
+                    or child.endswith('Build') \
+                    or child.startswith(".") \
+                    or re.match('^\s\\\\..*$', child) \
+                    or child == 'lastStable' \
+                    or child == 'lastSuccessful' \
+                    or child == 'nextBuildNumber':
+                continue
+            elif is_jenkins_folder(posixpath.join(root_dir, child)):
+                result.extend(self._read_all_paths(posixpath.join(root_dir, child)))
                 continue
             else:
                 result.append(posixpath.join(root_dir, child))
