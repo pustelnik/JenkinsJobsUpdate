@@ -3,6 +3,7 @@ import re
 import xml.dom.minidom
 import xml.etree.ElementTree as ET
 import logging
+import posixpath
 
 
 class JenkinsParameters:
@@ -108,6 +109,7 @@ class JenkinsParameters:
                     else:
                         new_cmd += line + '\n'
                 print('\nShell script after changes \n-------------------\n' + new_cmd)
+                command.text = new_cmd
 
     def read_mvn_property_from_bash_script(self, parameter_name):
         """Traverse jenkins job shell script lines, looking for line
@@ -225,19 +227,25 @@ class JenkinsParameters:
         copy_paths = {}
 
         def remove_root_path(path):
+            """Remove root directory from given path. Returns path (windows/linux)
+             depending on the system running app.
+
+            :param path: Linux format path
+            """
+
             def create_path(root_dir):
                 result_path = ''
                 root_dir_reached = False
-                for directory in path.split(os.path.sep):
+                for directory in path.split(posixpath.sep):
                     if directory == root_dir:
                         root_dir_reached = True
                     if root_dir_reached:
                         result_path += directory + os.path.sep
                 return result_path, root_dir_reached
 
-            result, root_reached = create_path('.jenkins')
+            result, root_reached = create_path('.jenkins' if path.__contains__('.jenkins') else 'jenkins')
             if not root_reached:
-                return create_path('jobs')
+                return create_path('jobs')[0]
             return result
 
         for config_path in config_paths:
@@ -252,7 +260,7 @@ class JenkinsParameters:
                 # creates directory tree
                 os.makedirs(copy_dir_path)
             src_file = self.read_config_file(config_path)
-            target_file = open(copy_file_path, 'w')
+            target_file = open(copy_file_path, 'w', encoding='utf-8')
             target_file.write(src_file)
             copy_paths[os.path.split(dir_path)[1]] = copy_file_path
         return copy_paths
@@ -339,7 +347,7 @@ class JenkinsParameters:
                 params.root = root
                 mvn_parameters_to_add = []
                 for new_parameter_name in new_parameters.keys():
-                    mvn_param = JenkinsParameters(src_config_path).\
+                    mvn_param = JenkinsParameters(src_config_path). \
                         read_mvn_property_from_bash_script(new_parameter_name)
                     mvn_parameters_to_add.append((new_parameter_name, mvn_param))
                 for new_parameter in mvn_parameters_to_add:

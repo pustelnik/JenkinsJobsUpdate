@@ -96,8 +96,10 @@ class RemoteJenkinsParameters(localUpdateJobs.JenkinsParameters):
 
     def import_job_parameters(self, new_parameters, config_paths, with_mvn_params=False, src_config_path=''):
         local_config_paths = self.copy_configs(config_paths.values(), deep_copy=False)
+        local_src_config_path = self.copy_configs([src_config_path])
         selected_local_config_paths = self.filter_selected_local_config_paths(config_paths, local_config_paths)
-        super().import_job_parameters(new_parameters, selected_local_config_paths.values(), with_mvn_params)
+        super().import_job_parameters(new_parameters, selected_local_config_paths.values(), with_mvn_params,
+                                      src_config_path=list(local_src_config_path.values())[0])
         self.override_remote_config(config_paths, local_config_paths)
 
     def read_job_all_parameters(self, config_path):
@@ -138,11 +140,26 @@ class RemoteJenkinsParameters(localUpdateJobs.JenkinsParameters):
                 logging.debug("{}    is folder".format(path))  # TODO mark path as directory in search result list
             return folder
 
+        def contains_config(path):
+            try:
+                listdir = self.sftp_client.listdir(path)
+                for child in listdir:
+                    if child == 'config.xml':
+                        return True
+                return False
+            except FileNotFoundError as err:
+                logging.debug(err, path)
+                return False
+
         for child in self.sftp_client.listdir(root_dir):
             if is_jenkins_folder(root_dir) and child == 'config.xml':
+                result.append(root_dir)
                 continue
+            if child != 'config.xml' and re.match('.*\\.xml', child):
+                continue
+            path = posixpath.join(root_dir, child)
             if child == "jobs":
-                result.extend(self._read_all_paths(posixpath.join(root_dir, child)))
+                result.extend(self._read_all_paths(path))
                 continue
             elif child == 'builds' \
                     or child.endswith('Build') \
@@ -152,11 +169,11 @@ class RemoteJenkinsParameters(localUpdateJobs.JenkinsParameters):
                     or child == 'lastSuccessful' \
                     or child == 'nextBuildNumber':
                 continue
-            elif is_jenkins_folder(posixpath.join(root_dir, child)):
-                result.extend(self._read_all_paths(posixpath.join(root_dir, child)))
+            elif is_jenkins_folder(path):
+                result.extend(self._read_all_paths(path))
                 continue
-            else:
-                result.append(posixpath.join(root_dir, child))
+            elif contains_config(path):
+                result.append(path)
         return result
 
     def read_config_file(self, path):

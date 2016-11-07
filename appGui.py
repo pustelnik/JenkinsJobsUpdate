@@ -8,6 +8,7 @@
 
 import re
 import sys
+import os
 
 from PyQt4 import QtCore, QtGui
 from PyQt4.QtCore import *
@@ -41,7 +42,7 @@ class Ui_TabWidget(object):
     def setupUi(self, Ui_TabWidget):
         Ui_TabWidget.setObjectName(_fromUtf8("Ui_TabWidget"))
         Ui_TabWidget.resize(492, 761)
-        sizePolicy = QtGui.QSizePolicy(QtGui.QSizePolicy.Expanding, QtGui.QSizePolicy.Expanding)
+        sizePolicy = QtGui.QSizePolicy(QtGui.QSizePolicy.Minimum, QtGui.QSizePolicy.Fixed)
         sizePolicy.setHorizontalStretch(0)
         sizePolicy.setVerticalStretch(0)
         sizePolicy.setHeightForWidth(Ui_TabWidget.sizePolicy().hasHeightForWidth())
@@ -234,7 +235,7 @@ class Ui_TabWidget(object):
         self.notSavedParamList.setObjectName(_fromUtf8("notSavedParamList"))
         self.verticalLayout_3.addWidget(self.notSavedParamList)
         self.buttonBox = QtGui.QDialogButtonBox(self.parameters_tab)
-        self.buttonBox.setStandardButtons(QtGui.QDialogButtonBox.Discard | QtGui.QDialogButtonBox.Save)
+        self.buttonBox.setStandardButtons(QtGui.QDialogButtonBox.Discard|QtGui.QDialogButtonBox.Save)
         self.buttonBox.setObjectName(_fromUtf8("buttonBox"))
         self.verticalLayout_3.addWidget(self.buttonBox)
         self.verticalLayout.addLayout(self.verticalLayout_3)
@@ -391,8 +392,7 @@ class Ui_TabWidget(object):
         self.pushButton_3.setText(_translate("Ui_TabWidget", "Preview config", None))
         self.label_3.setText(_translate("Ui_TabWidget", "Jenkins jobs root", None))
         self.findJobsBtn.setText(_translate("Ui_TabWidget", "Find jobs", None))
-        Ui_TabWidget.setTabText(Ui_TabWidget.indexOf(self.jobs_select_tab),
-                                _translate("Ui_TabWidget", "Jobs selection", None))
+        Ui_TabWidget.setTabText(Ui_TabWidget.indexOf(self.jobs_select_tab), _translate("Ui_TabWidget", "Jobs selection", None))
         self.label_5.setText(_translate("Ui_TabWidget", "Parameter type", None))
         self.stringRadioBtn.setText(_translate("Ui_TabWidget", "String", None))
         self.booleanRadioBtn.setText(_translate("Ui_TabWidget", "Boolean", None))
@@ -403,14 +403,12 @@ class Ui_TabWidget(object):
         self.defValLabel.setText(_translate("Ui_TabWidget", "Default value", None))
         self.addParamBtn.setText(_translate("Ui_TabWidget", "Add parameter", None))
         self.label_9.setText(_translate("Ui_TabWidget", "Not saved parameters", None))
-        Ui_TabWidget.setTabText(Ui_TabWidget.indexOf(self.parameters_tab),
-                                _translate("Ui_TabWidget", "Add Parameters", None))
+        Ui_TabWidget.setTabText(Ui_TabWidget.indexOf(self.parameters_tab), _translate("Ui_TabWidget", "Add Parameters", None))
         self.label_2.setText(_translate("Ui_TabWidget", "Source job", None))
         self.find_parameters_btn.setText(_translate("Ui_TabWidget", "Find parameters", None))
         self.label_6.setText(_translate("Ui_TabWidget", "Target jobs", None))
         self.label_7.setText(_translate("Ui_TabWidget", "Parameters to copy", None))
-        self.copy_mvn_parameter_check_box.setText(
-            _translate("Ui_TabWidget", "Copy maven parameter to bash script", None))
+        self.copy_mvn_parameter_check_box.setText(_translate("Ui_TabWidget", "Copy maven parameter to bash script", None))
         self.preview_parameters_btn.setText(_translate("Ui_TabWidget", "Preview", None))
         self.copy_parameters_btn.setText(_translate("Ui_TabWidget", "Copy", None))
         Ui_TabWidget.setTabText(Ui_TabWidget.indexOf(self.tab), _translate("Ui_TabWidget", "Copy Parameters", None))
@@ -517,7 +515,7 @@ class JenkinsUpdateJobsGui(QTabWidget, Ui_TabWidget):
         target_job_list_model = QStandardItemModel(self.target_jobs_list_view)
 
         def create_model_list(result_model, temp_results, checkable=True):
-            for job in temp_results.keys():
+            for job in sorted(temp_results.keys()):
                 item = QStandardItem(job)
                 item.setCheckable(checkable)
                 result_model.appendRow(item)
@@ -532,7 +530,12 @@ class JenkinsUpdateJobsGui(QTabWidget, Ui_TabWidget):
         self.target_jobs_list_view.setModel(target_job_list_model)
 
     def show_error_message(self, message):
+        """Displays critilal QMessageBox with message. Raises JenkinsJobEditorGuiException.
+
+         :param message: error to be displayed and raised in exception
+         """
         QtGui.QMessageBox.critical(self, "Warning!", message, QtGui.QMessageBox.Ok)
+        raise JenkinsJobEditorGuiException(message)
 
     def show_info_message(self, message):
         QtGui.QMessageBox.information(self, "Info!", message, QtGui.QMessageBox.Ok)
@@ -672,7 +675,7 @@ class JenkinsUpdateJobsGui(QTabWidget, Ui_TabWidget):
         item = self.current_parameter_data
         self.job_parameters_all = self.jenkins_params.read_job_all_parameters(self.tempResults[item])
         model = QStandardItemModel(self.listView)
-        for key in self.job_parameters_all[1].keys():
+        for key in sorted(self.job_parameters_all[1].keys()):
             item = QStandardItem(key)
             item.setCheckable(True)
             model.appendRow(item)
@@ -711,9 +714,12 @@ class JenkinsUpdateJobsGui(QTabWidget, Ui_TabWidget):
         for row in range(target_model.rowCount()):
             item = target_model.item(row)
             if item.checkState() == QtCore.Qt.Checked:
-                self.jenkins_params.import_job_parameters(src_parameters, get_target_jobs_config_paths(),
-                                                          with_mvn_params=copy_mvn_parameter,
-                                                          src_config_path=get_src_job_config_path())
+                try:
+                    self.jenkins_params.import_job_parameters(src_parameters, get_target_jobs_config_paths(),
+                                                              with_mvn_params=copy_mvn_parameter,
+                                                              src_config_path=get_src_job_config_path())
+                except Exception as err:
+                    self.show_error_message(str(err))
         self.show_info_message("Parameters copied successfully")
 
     @staticmethod
@@ -740,13 +746,21 @@ class JenkinsUpdateJobsGui(QTabWidget, Ui_TabWidget):
         else:
             config_paths = self._get_selected_jobs().values()
         backup_path = self.backup_file_path.text()
+        if backup_path == '' or not os.path.exists(backup_path):
+            self.show_error_message("{} is not valid backup path!".format(backup_path))
+
         self.jenkins_params.copy_configs(config_paths, target_dir=backup_path)
         self.show_info_message("Created backup at {} succeeded".format(backup_path))
 
     def restore_backup(self):
+        self.show_error_message('Not implemented!') # TODO don't work remotely
         backup_src = self.backup_file_path.text()
         backup_target = self.jenkins_home_line_edit.text()
-        config_paths = localUpdateJobs.JenkinsParameters.read_all_configs(backup_src).values()
+        if backup_src == '' or not os.path.exists(backup_src):
+            self.show_error_message('{} is not valid backup source!'.format(backup_src))
+        if backup_target == '':
+            self.show_error_message('{} is not valid backup target path!'.format(backup_target))
+        config_paths = localUpdateJobs.JenkinsParameters(backup_src).read_all_configs(backup_src).values()
         self.jenkins_params.copy_configs(config_paths, target_dir=backup_target)
 
 
