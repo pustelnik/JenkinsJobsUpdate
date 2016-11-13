@@ -85,7 +85,7 @@ class JenkinsParameters:
 
     @staticmethod
     def is_maven_set_property_line(line):
-        return not re.match('^mvn.*\\\\$', line) and re.match('^\s*-D.*\s*$', line)
+        return not re.match('^mvn.*\\\\$', line) and re.match('^\s*["]?\w*-D.*\w*$', line)
 
     def add_mvn_property_to_bash_script(self, mvn_property, prop_value):
         """Adds maven property to bash script
@@ -105,7 +105,7 @@ class JenkinsParameters:
                     if self.is_maven_set_property_line(line) \
                             and not re.match('.*\\\\$', line):
                         new_cmd += line + ' \\\n'
-                        new_cmd += mvn_property
+                        new_cmd += mvn_property + '\n'
                     else:
                         new_cmd += line + '\n'
                 print('\nShell script after changes \n-------------------\n' + new_cmd)
