@@ -38,15 +38,88 @@ except AttributeError:
         return QtGui.QApplication.translate(context, text, disambig)
 
 
+class FilterLineEdit(QtGui.QLineEdit):
+    """Class used for filtering jobs list view model on
+    copy parameters tab."""
+    def __init__(self, parent, is_src_filter, *__args):
+        super().__init__(*__args)
+        self.parent = parent
+        self.is_src_filter = is_src_filter
+        self.src_jobs_copy = []
+        self.target_jobs_copy = []
+
+    def mousePressEvent(self, QMouseEvent):
+        super().mousePressEvent(QMouseEvent)
+        self.clear_text()
+
+    def keyReleaseEvent(self, QKeyEvent):
+        super().keyReleaseEvent(QKeyEvent)
+        if self.is_src_filter:
+            self.filter_src_jobs()
+        else:
+            self.filter_target_jobs()
+
+    def clear_text(self):
+        if self.is_src_filter and self.parent.src_job_filter.text().startswith('source filter'):
+            self.parent.src_job_filter.setText('')
+        elif self.parent.target_job_filter.text().startswith('target filter'):
+            self.parent.target_job_filter.setText('')
+
+    def filter_src_jobs(self):
+        self._filter_model(self.parent.src_job_list_view.model(), self.parent.src_job_filter.text())
+
+    def filter_target_jobs(self):
+        self._filter_model(self.parent.target_jobs_list_view.model(), self.parent.target_job_filter.text())
+
+    def _filter_model(self, model: QStandardItemModel, regex):
+        self._restore_copy(model, self.get_model_copy(model))
+        for row in range(model.rowCount(), -1, -1):
+            item = model.item(row)
+            if item is not None and not re.match(regex.startswith('^') if '' else '.*' + regex.lower() + '.*',
+                                                 item.text().lower()):
+                model.removeRow(row)
+
+    def get_model_copy(self, model):
+        if self.is_src_filter and self.src_jobs_copy.__len__() == 0:
+            self.src_jobs_copy = self._copy_model_items(model)
+        elif self.target_jobs_copy.__len__() == 0:
+            self.target_jobs_copy = self._copy_model_items(model)
+        if self.is_src_filter:
+            return self.src_jobs_copy
+        else:
+            return self.target_jobs_copy
+
+    @staticmethod
+    def _copy_model_items(model):
+        temp = []
+        for row in range(model.rowCount()):
+            item = model.item(row)
+            temp.append(item.text())
+        return temp
+
+    @staticmethod
+    def _restore_copy(model: QStandardItemModel, copy):
+        for row in range(model.rowCount(), -1, -1):
+            model.removeRow(row)
+        for job_name in copy:
+            item = QStandardItem()
+            item.setCheckable(False)
+            item.setText(job_name)
+            model.appendRow(item)
+
+
 class Ui_TabWidget(object):
     def setupUi(self, Ui_TabWidget):
         Ui_TabWidget.setObjectName(_fromUtf8("Ui_TabWidget"))
-        Ui_TabWidget.resize(492, 761)
-        sizePolicy = QtGui.QSizePolicy(QtGui.QSizePolicy.Minimum, QtGui.QSizePolicy.Fixed)
+        Ui_TabWidget.setEnabled(True)
+        Ui_TabWidget.resize(511, 742)
+        sizePolicy = QtGui.QSizePolicy(QtGui.QSizePolicy.Expanding, QtGui.QSizePolicy.Expanding)
         sizePolicy.setHorizontalStretch(0)
         sizePolicy.setVerticalStretch(0)
         sizePolicy.setHeightForWidth(Ui_TabWidget.sizePolicy().hasHeightForWidth())
         Ui_TabWidget.setSizePolicy(sizePolicy)
+        Ui_TabWidget.setMinimumSize(QtCore.QSize(400, 700))
+        Ui_TabWidget.setTabShape(QtGui.QTabWidget.Rounded)
         self.jobs_select_tab = QtGui.QWidget()
         self.jobs_select_tab.setObjectName(_fromUtf8("jobs_select_tab"))
         self.gridLayout = QtGui.QGridLayout(self.jobs_select_tab)
@@ -235,7 +308,7 @@ class Ui_TabWidget(object):
         self.notSavedParamList.setObjectName(_fromUtf8("notSavedParamList"))
         self.verticalLayout_3.addWidget(self.notSavedParamList)
         self.buttonBox = QtGui.QDialogButtonBox(self.parameters_tab)
-        self.buttonBox.setStandardButtons(QtGui.QDialogButtonBox.Discard|QtGui.QDialogButtonBox.Save)
+        self.buttonBox.setStandardButtons(QtGui.QDialogButtonBox.Discard | QtGui.QDialogButtonBox.Save)
         self.buttonBox.setObjectName(_fromUtf8("buttonBox"))
         self.verticalLayout_3.addWidget(self.buttonBox)
         self.verticalLayout.addLayout(self.verticalLayout_3)
@@ -262,10 +335,11 @@ class Ui_TabWidget(object):
         self.horizontalLayout_6 = QtGui.QHBoxLayout()
         self.horizontalLayout_6.setContentsMargins(-1, 0, -1, -1)
         self.horizontalLayout_6.setObjectName(_fromUtf8("horizontalLayout_6"))
-        spacerItem2 = QtGui.QSpacerItem(40, 20, QtGui.QSizePolicy.Expanding, QtGui.QSizePolicy.Minimum)
-        self.horizontalLayout_6.addItem(spacerItem2)
+        self.src_job_filter = FilterLineEdit(self, True, self.tab)
+        self.src_job_filter.setObjectName(_fromUtf8("src_job_filter"))
+        self.horizontalLayout_6.addWidget(self.src_job_filter)
         self.find_parameters_btn = QtGui.QPushButton(self.tab)
-        sizePolicy = QtGui.QSizePolicy(QtGui.QSizePolicy.Fixed, QtGui.QSizePolicy.Expanding)
+        sizePolicy = QtGui.QSizePolicy(QtGui.QSizePolicy.Fixed, QtGui.QSizePolicy.Fixed)
         sizePolicy.setHorizontalStretch(0)
         sizePolicy.setVerticalStretch(0)
         sizePolicy.setHeightForWidth(self.find_parameters_btn.sizePolicy().hasHeightForWidth())
@@ -280,6 +354,15 @@ class Ui_TabWidget(object):
         self.target_jobs_list_view.setSelectionMode(QtGui.QAbstractItemView.SingleSelection)
         self.target_jobs_list_view.setObjectName(_fromUtf8("target_jobs_list_view"))
         self.verticalLayout_6.addWidget(self.target_jobs_list_view)
+        self.horizontalLayout_5 = QtGui.QHBoxLayout()
+        self.horizontalLayout_5.setContentsMargins(-1, 0, -1, -1)
+        self.horizontalLayout_5.setObjectName(_fromUtf8("horizontalLayout_5"))
+        self.target_job_filter = FilterLineEdit(self, False, self.tab)
+        self.target_job_filter.setObjectName(_fromUtf8("target_job_filter"))
+        self.horizontalLayout_5.addWidget(self.target_job_filter)
+        spacerItem2 = QtGui.QSpacerItem(140, 20, QtGui.QSizePolicy.Fixed, QtGui.QSizePolicy.Minimum)
+        self.horizontalLayout_5.addItem(spacerItem2)
+        self.verticalLayout_6.addLayout(self.horizontalLayout_5)
         self.label_7 = QtGui.QLabel(self.tab)
         self.label_7.setObjectName(_fromUtf8("label_7"))
         self.verticalLayout_6.addWidget(self.label_7)
@@ -303,6 +386,11 @@ class Ui_TabWidget(object):
         self.preview_parameters_btn.setObjectName(_fromUtf8("preview_parameters_btn"))
         self.horizontalLayout.addWidget(self.preview_parameters_btn)
         self.copy_parameters_btn = QtGui.QPushButton(self.tab)
+        sizePolicy = QtGui.QSizePolicy(QtGui.QSizePolicy.Fixed, QtGui.QSizePolicy.Fixed)
+        sizePolicy.setHorizontalStretch(0)
+        sizePolicy.setVerticalStretch(0)
+        sizePolicy.setHeightForWidth(self.copy_parameters_btn.sizePolicy().hasHeightForWidth())
+        self.copy_parameters_btn.setSizePolicy(sizePolicy)
         self.copy_parameters_btn.setObjectName(_fromUtf8("copy_parameters_btn"))
         self.horizontalLayout.addWidget(self.copy_parameters_btn)
         self.verticalLayout_6.addLayout(self.horizontalLayout)
@@ -392,7 +480,8 @@ class Ui_TabWidget(object):
         self.pushButton_3.setText(_translate("Ui_TabWidget", "Preview config", None))
         self.label_3.setText(_translate("Ui_TabWidget", "Jenkins jobs root", None))
         self.findJobsBtn.setText(_translate("Ui_TabWidget", "Find jobs", None))
-        Ui_TabWidget.setTabText(Ui_TabWidget.indexOf(self.jobs_select_tab), _translate("Ui_TabWidget", "Jobs selection", None))
+        Ui_TabWidget.setTabText(Ui_TabWidget.indexOf(self.jobs_select_tab),
+                                _translate("Ui_TabWidget", "Jobs selection", None))
         self.label_5.setText(_translate("Ui_TabWidget", "Parameter type", None))
         self.stringRadioBtn.setText(_translate("Ui_TabWidget", "String", None))
         self.booleanRadioBtn.setText(_translate("Ui_TabWidget", "Boolean", None))
@@ -403,12 +492,16 @@ class Ui_TabWidget(object):
         self.defValLabel.setText(_translate("Ui_TabWidget", "Default value", None))
         self.addParamBtn.setText(_translate("Ui_TabWidget", "Add parameter", None))
         self.label_9.setText(_translate("Ui_TabWidget", "Not saved parameters", None))
-        Ui_TabWidget.setTabText(Ui_TabWidget.indexOf(self.parameters_tab), _translate("Ui_TabWidget", "Add Parameters", None))
+        Ui_TabWidget.setTabText(Ui_TabWidget.indexOf(self.parameters_tab),
+                                _translate("Ui_TabWidget", "Add Parameters", None))
         self.label_2.setText(_translate("Ui_TabWidget", "Source job", None))
+        self.src_job_filter.setText(_translate("Ui_TabWidget", "source filter...", None))
         self.find_parameters_btn.setText(_translate("Ui_TabWidget", "Find parameters", None))
         self.label_6.setText(_translate("Ui_TabWidget", "Target jobs", None))
+        self.target_job_filter.setText(_translate("Ui_TabWidget", "target filter...", None))
         self.label_7.setText(_translate("Ui_TabWidget", "Parameters to copy", None))
-        self.copy_mvn_parameter_check_box.setText(_translate("Ui_TabWidget", "Copy maven parameter to bash script", None))
+        self.copy_mvn_parameter_check_box.setText(
+            _translate("Ui_TabWidget", "Copy maven parameter to bash script", None))
         self.preview_parameters_btn.setText(_translate("Ui_TabWidget", "Preview", None))
         self.copy_parameters_btn.setText(_translate("Ui_TabWidget", "Copy", None))
         Ui_TabWidget.setTabText(Ui_TabWidget.indexOf(self.tab), _translate("Ui_TabWidget", "Copy Parameters", None))
@@ -753,7 +846,7 @@ class JenkinsUpdateJobsGui(QTabWidget, Ui_TabWidget):
         self.show_info_message("Created backup at {} succeeded".format(backup_path))
 
     def restore_backup(self):
-        self.show_error_message('Not implemented!') # TODO don't work remotely
+        self.show_error_message('Not implemented!')  # TODO don't work remotely
         backup_src = self.backup_file_path.text()
         backup_target = self.jenkins_home_line_edit.text()
         if backup_src == '' or not os.path.exists(backup_src):
